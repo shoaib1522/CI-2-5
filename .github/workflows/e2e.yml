@@ -21,10 +21,14 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install Playwright Browsers
-        # This crucial step downloads the headless browsers needed for Playwright to run in CI
         run: playwright install --with-deps
 
       - name: Run Playwright E2E Tests
-        # Pytest will discover and run our test_e2e_flow.py script.
-        # The test script itself handles starting and stopping the servers.
+        # --- THIS IS THE FIX ---
+        # We set the PYTHONPATH environment variable to '.' (the current directory).
+        # This tells Python to add the project's root folder to its search path.
+        # Now, when the test script says `from backend.database`, Python will
+        # look in the root, find the `backend` folder, and the import will succeed.
         run: pytest -v tests/
+        env:
+          PYTHONPATH: .
