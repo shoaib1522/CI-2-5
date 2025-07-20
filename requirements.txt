@@ -1,6 +1,12 @@
 # requirements.txt
-
+# Backend
 fastapi
 uvicorn[standard]
+
+# Frontend
+streamlit
 requests
+
+# Testing
 pytest
+pytest-playwright

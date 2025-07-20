@@ -1,6 +1,6 @@
 # .github/workflows/e2e.yml
 
-name: End-to-End Tests
+name: Advanced End-to-End Tests
 
 on: [push, pull_request]
 
@@ -17,10 +17,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Install Python Dependencies
         run: pip install -r requirements.txt
 
-      - name: Run End-to-End Tests
-        # We simply run pytest. The test script itself will start the server,
-        # run the tests against it, and then shut it down.
-        run: pytest test_e2e.py -v
+      - name: Install Playwright Browsers
+        # This crucial step downloads the headless browsers needed for Playwright to run in CI
+        run: playwright install --with-deps
+
+      - name: Run Playwright E2E Tests
+        # Pytest will discover and run our test_e2e_flow.py script.
+        # The test script itself handles starting and stopping the servers.
+        run: pytest -v tests/
