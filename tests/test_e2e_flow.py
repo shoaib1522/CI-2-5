@@ -22,18 +22,24 @@ def wait_for_server(url: str, timeout: int = 20):
             time.sleep(1)
     pytest.fail(f"Server at {url} did not become healthy within {timeout} seconds.")
 
+# tests/test_e2e_flow.py
+
+# ... (imports are the same) ...
+
 @pytest.fixture(scope="session", autouse=True)
 def http_servers():
-    """Fixture to start and stop both backend and frontend servers."""
+    """Fixture to start and stop both backend and frontend servers correctly."""
     clear_db()
     
-    # Start Backend (FastAPI)
+    # --- THIS IS THE FIX FOR THE BACKEND ---
+    # We tell Popen to run Python as a module (-m) with uvicorn.
+    # We specify the app as 'backend.main:app'.
+    # This makes Python's import system work correctly for relative imports.
     backend_process = subprocess.Popen(
-        ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"],
-        cwd="backend"
+        ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
     )
 
-    # Start Frontend (Streamlit)
+    # Start Frontend (Streamlit) - this command was correct.
     frontend_process = subprocess.Popen(
         ["streamlit", "run", "app.py", "--server.port", "8501", "--server.headless", "true"],
         cwd="frontend"
@@ -41,17 +47,15 @@ def http_servers():
 
     # Wait for both servers to be healthy
     wait_for_server(BACKEND_URL)
-    # Streamlit doesn't have a built-in health check, so we give it a generous sleep.
-    # In a real enterprise app, you'd add a health check page to the Streamlit app.
     time.sleep(5)
     
-    yield # Tests run here
+    yield
     
-    # Teardown: terminate both servers
     backend_process.terminate()
     frontend_process.terminate()
     clear_db()
 
+# ... (the rest of the test functions remain the same) ...
 def test_full_user_journey(page: Page):
     """
     Tests the entire user flow from registration to viewing the dashboard.
