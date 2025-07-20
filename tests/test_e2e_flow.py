@@ -5,10 +5,23 @@ import subprocess
 import time
 import requests
 from playwright.sync_api import Page, expect
-from backend.database import clear_db
+from backend.database import clear_db, DB_FILE, get_db_connection, init_db
 
-# ... (the setup and fixture code remains exactly the same) ...
-# ... (wait_for_server and http_servers fixtures are correct) ...
+# Define server URLs
+BACKEND_URL = "http://127.0.0.1:8000"
+FRONTEND_URL = "http://127.0.0.1:8501"
+
+def wait_for_server(url: str, timeout: int = 20):
+    """Polls a health check endpoint until the server is ready."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            if requests.get(f"{url}/health").status_code == 200:
+                print(f"Server at {url} is healthy.")
+                return
+        except requests.ConnectionError:
+            time.sleep(1)
+    pytest.fail(f"Server at {url} did not become healthy within {timeout} seconds.")
 
 @pytest.fixture(scope="session", autouse=True)
 def http_servers():
@@ -33,8 +46,6 @@ def http_servers():
     frontend_process.terminate()
     clear_db()
 
-# --- THE FIX IS IN THIS TEST FUNCTION ---
-
 def test_full_user_journey(page: Page):
     """
     Tests the entire user flow from registration to viewing the dashboard.
@@ -44,11 +55,8 @@ def test_full_user_journey(page: Page):
     # --- REGISTRATION ---
     expect(page.get_by_text("Register New User")).to_be_visible()
     
-    # We are still looking for the label "Username", but we specify we want the input textbox.
+    # Use the more specific 'get_by_role' to avoid ambiguity
     page.get_by_role("textbox", name="Username").fill("e2e_playwright_user")
-    
-    # THIS IS THE FIX: Be more specific. We want the textbox with the label "Password".
-    # Playwright's `get_by_label` is good, but `get_by_role` is more precise here.
     page.get_by_role("textbox", name="Password").fill("SuperSecure123!")
     
     page.get_by_role("button", name="Register").click()
@@ -58,7 +66,6 @@ def test_full_user_journey(page: Page):
     page.get_by_text("Login", exact=True).click()
     expect(page.get_by_text("Login")).to_be_visible()
     
-    # Use the more specific selector here as well for consistency.
     page.get_by_role("textbox", name="Username").fill("e2e_playwright_user")
     page.get_by_role("textbox", name="Password").fill("SuperSecure123!")
     
@@ -68,12 +75,23 @@ def test_full_user_journey(page: Page):
     expect(page.get_by_role("heading", name="Welcome, e2e_playwright_user!")).to_be_visible()
     expect(page.get_by_text("This is your secret dashboard.")).to_be_visible()
 
-# The second test can remain as it is, but for consistency, it's better to update it too.
 def test_login_with_invalid_credentials(page: Page):
     """
     Tests that the server correctly rejects a login attempt with a wrong password.
     """
     page.goto(FRONTEND_URL)
-    # Register the user first
+    
+    # --- REGISTRATION (for the user we will test against) ---
     page.get_by_role("textbox", name="Username").fill("test_user_2")
-    page.get_by_role("textbox", name
+    page.get_by_role("textbox", name="Password").fill("correct_password")
+    page.get_by_role("button", name="Register").click()
+    expect(page.get_by_text("Registration successful! Please log in.")).to_be_visible()
+
+    # --- LOGIN with wrong credentials ---
+    page.get_by_text("Login", exact=True).click()
+    page.get_by_role("textbox", name="Username").fill("test_user_2")
+    page.get_by_role("textbox", name="Password").fill("wrong_password")
+    page.get_by_role("button", name_re="Login").click()
+
+    # --- VERIFY FAILURE ---
+    expect(page.get_by_text("Login failed: Invalid credentials.")).to_be_visible()
