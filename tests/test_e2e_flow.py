@@ -4,7 +4,7 @@ import pytest
 import subprocess
 import time
 import requests
-import re # Import the regular expression module
+import re
 from playwright.sync_api import Page, expect
 from backend.database import clear_db, DB_FILE, get_db_connection, init_db
 
@@ -33,29 +33,39 @@ def http_servers():
         cwd="frontend"
     )
     wait_for_server(BACKEND_URL)
+    # Give streamlit an initial generous sleep, the test will handle the rest.
     time.sleep(5)
     yield
     backend_process.terminate()
     frontend_process.terminate()
     clear_db()
 
+# --- THE FIXES ARE IN THESE TWO TEST FUNCTIONS ---
+
 def test_full_user_journey(page: Page):
     page.goto(FRONTEND_URL)
     
     # --- REGISTRATION ---
-    # Locate the form first, then the elements within it. This is more robust.
-    register_form = page.locator('form[data-testid="stForm"]:has-text("Register New User")')
-    register_form.get_by_role("textbox", name="Username").fill("e2e_user")
-    register_form.get_by_role("textbox", name="Password").fill("SuperSecure123!")
-    register_form.get_by_role("button", name="Register").click()
+    # EXPLICIT WAIT: Wait for the main header to appear before doing anything else.
+    # This ensures the Streamlit app has loaded.
+    expect(page.get_by_role("heading", name="Register New User")).to_be_visible(timeout=15000)
+
+    # Now that we know the page is ready, we can use simpler selectors.
+    # Streamlit uses unique keys for inputs, which we can leverage.
+    page.locator('input[aria-label="Username"]').first.fill("e2e_user")
+    page.locator('input[aria-label="Password"]').first.fill("SuperSecure123!")
+    page.get_by_role("button", name="Register").click()
+    
     expect(page.get_by_text("Registration successful! Please log in.")).to_be_visible()
 
     # --- LOGIN ---
     page.get_by_text("Login", exact=True).click()
-    login_form = page.locator('form[data-testid="stForm"]:has-text("Login")')
-    login_form.get_by_role("textbox", name="Username").fill("e2e_user")
-    login_form.get_by_role("textbox", name="Password").fill("SuperSecure123!")
-    login_form.get_by_role("button", name="Login").click()
+    expect(page.get_by_role("heading", name="Login")).to_be_visible()
+    
+    # Use the same robust selector strategy for the login form.
+    page.locator('input[aria-label="Username"]').last.fill("e2e_user")
+    page.locator('input[aria-label="Password"]').last.fill("SuperSecure123!")
+    page.get_by_role("button", name="Login").click()
 
     # --- VERIFY DASHBOARD ---
     expect(page.get_by_role("heading", name=re.compile("Welcome, e2e_user"))).to_be_visible()
@@ -65,20 +75,20 @@ def test_login_with_invalid_credentials(page: Page):
     page.goto(FRONTEND_URL)
     
     # --- REGISTRATION ---
-    register_form = page.locator('form[data-testid="stForm"]:has-text("Register New User")')
-    register_form.get_by_role("textbox", name="Username").fill("test_user_2")
-    register_form.get_by_role("textbox", name="Password").fill("correct_password")
-    register_form.get_by_role("button", name="Register").click()
+    expect(page.get_by_role("heading", name="Register New User")).to_be_visible(timeout=15000)
+    page.locator('input[aria-label="Username"]').first.fill("test_user_2")
+    page.locator('input[aria-label="Password"]').first.fill("correct_password")
+    page.get_by_role("button", name="Register").click()
     expect(page.get_by_text("Registration successful! Please log in.")).to_be_visible()
 
     # --- LOGIN with wrong credentials ---
     page.get_by_text("Login", exact=True).click()
-    login_form = page.locator('form[data-testid="stForm"]:has-text("Login")')
-    login_form.get_by_role("textbox", name="Username").fill("test_user_2")
-    login_form.get_by_role("textbox", name="Password").fill("wrong_password")
-    # --- THIS IS THE FIX for the TypeError ---
-    # We find the specific login button within the login form.
-    login_form.get_by_role("button", name="Login").click()
+    expect(page.get_by_role("heading", name="Login")).to_be_visible()
+
+    # We use .last because the login form now appears second on the page's DOM.
+    page.locator('input[aria-label="Username"]').last.fill("test_user_2")
+    page.locator('input[aria-label="Password"]').last.fill("wrong_password")
+    page.get_by_role("button", name="Login").click()
 
     # --- VERIFY FAILURE ---
     expect(page.get_by_text("Login failed: Invalid credentials.")).to_be_visible()
