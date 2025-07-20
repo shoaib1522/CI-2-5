@@ -4,36 +4,41 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from .database import get_db_connection, init_db
 
-# Create the FastAPI app instance
+# ... (rest of the file is the same) ...
+
 app = FastAPI()
-# Establish a single, shared database connection for the app's lifecycle
 conn = get_db_connection()
-# Ensure the 'users' table exists when the app starts
 init_db(conn)
 
-# Pydantic models for request validation
 class User(BaseModel):
     username: str
     password: str
 
+# --- ADD THIS NEW ENDPOINT ---
+@app.get("/health")
+def health_check():
+    """A simple endpoint to verify that the API is running."""
+    return {"status": "ok"}
+# -----------------------------
+
 @app.post("/register")
 def register(user: User):
-    """Endpoint to register a new user."""
+    # ... (rest of the function is the same) ...
     cursor = conn.cursor()
     try:
         cursor.execute(
             "INSERT INTO users (username, password) VALUES (?, ?)",
-            (user.username, user.fget)
+            (user.username, user.password)
         )
         conn.commit()
     except Exception as e:
-        # A simple catch-all for errors, like a duplicate username
         raise HTTPException(status_code=400, detail=f"Could not register user. Error: {e}")
     return {"message": "User registered successfully"}
 
+
 @app.post("/login")
 def login(user: User):
-    """Endpoint to log in a user and return a fake token."""
+    # ... (rest of the function is the same) ...
     cursor = conn.cursor()
     cursor.execute(
         "SELECT * FROM users WHERE username = ? AND password = ?",
@@ -41,8 +46,6 @@ def login(user: User):
     )
     result = cursor.fetchone()
     if result:
-        # In a real app, you would generate a real JWT here.
         return {"message": "Login successful", "token": "fake-jwt-token-for-e2e-test"}
     
-    # If no user is found, raise an authentication error.
     raise HTTPException(status_code=401, detail="Invalid username or password")
